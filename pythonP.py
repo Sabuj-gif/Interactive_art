@@ -122,30 +122,29 @@ def drop_sequence(pot_x, seed_x_at_drop):
         time.sleep(0.25)
     return False
 
-# ---------- Intro arrow (PERFECTLY POINTY VERSION) ----------
+# ---------- Intro arrow (handle + triangular head) ----------
 def show_arrow_right():
     """
-    Display a right-pointing arrow starting from column 0,
-    with a 5-column shaft and a 3-level triangular point.
+    Display a right-pointing arrow:
+    - Shaft (handle): middle 3 rows (rows 2,3,4) columns 0..4
+    - Head starts at column 5:
+        column 5 -> 5 pixels (rows 1..5)
+        column 6 -> 3 pixels (rows 2..4)
+        column 7 -> 1 pixel (row 3)  <- tip
     """
     arrow = [BLACK] * 64
-    # Shaft: 5 columns (0–4), rows 2–4
+    # Shaft: columns 0..4, rows 2..4
     for x in range(0, 5):
         for y in (2, 3, 4):
             arrow[idx(x, y)] = WHITE
-    # Arrowhead: like the tree top (5→3→1 pixels)
-    # Row 1 (top of head)
-    arrow[idx(5, 1)] = WHITE
-    arrow[idx(6, 1)] = WHITE
-    arrow[idx(7, 1)] = WHITE
-    # Row 2 (middle)
-    arrow[idx(6, 2)] = WHITE
+    # Head column 5: rows 1..5 (5 pixels)
+    for y in range(1, 6):
+        arrow[idx(5, y)] = WHITE
+    # Head column 6: rows 2..4 (3 pixels)
+    for y in range(2, 5):
+        arrow[idx(6, y)] = WHITE
+    # Tip at column 7 row 3 (center)
     arrow[idx(7, 3)] = WHITE
-    arrow[idx(6, 4)] = WHITE
-    # Row 3 (bottom of head)
-    arrow[idx(5, 5)] = WHITE
-    arrow[idx(6, 5)] = WHITE
-    arrow[idx(7, 5)] = WHITE
 
     sense.set_pixels(arrow)
 
@@ -183,7 +182,7 @@ def run_game():
             draw_pot_on(f, pot_x)
             sense.set_pixels(f)
 
-            # joystick input
+            # joystick
             evs = sense.stick.get_events()
             last = None
             for e in evs:
