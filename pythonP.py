@@ -20,23 +20,22 @@ def idx(x, y):
     return y * 8 + x
 
 def soil_frame(seed_col=None):
-    """Return base frame (soil on bottom row). Optionally put a yellow seed at row 6."""
+    """Return base frame (soil on bottom row). Optionally put a seed at row 6."""
     pixels = []
     for y in range(8):
         for x in range(8):
             pixels.append(BROWN if y == 7 else BLACK)
     if seed_col is not None and 0 <= seed_col < 8:
-        # yellow seed (use green for visibility)
-        pixels[idx(seed_col, 6)] = GREEN
+        pixels[idx(seed_col, 6)] = GREEN  # seed
     return pixels
 
 def draw_pot_on(frame, pot_x):
-    """Draw pot (two white pixels on top row) and draw one indicator pixel under center."""
+    """Draw pot (two white pixels on top row) and one indicator pixel below."""
     if 0 <= pot_x < 8:
         frame[idx(pot_x, 0)] = WHITE
     if 0 <= pot_x + 1 < 8:
         frame[idx(pot_x + 1, 0)] = WHITE
-    # drop indicator under the right pot pixel (center)
+    # drop indicator
     drop_x = pot_x + 1
     if 0 <= drop_x < 8:
         frame[idx(drop_x, 1)] = WHITE
@@ -57,11 +56,20 @@ def blink(color, duration=2.0, period=0.25):
 def show_scroll(text, color, speed=0.08):
     sense.show_message(text, scroll_speed=speed, text_colour=color)
 
-# ---------- Tree stages (6 stages total) ----------
+# ---------- Tree stages ----------
 def tree_stage(stage, trunk_x):
+    """
+    stage 1..6:
+      1: trunk bottom
+      2: trunk middle
+      3: trunk upper
+      4: 5-pixel T-bar of leaves
+      5: 3-pixel row of leaves
+      6: top single leaf
+    """
     f = [BLACK] * 64
     for x in range(8):
-        f[idx(x, 7)] = BROWN
+        f[idx(x, 7)] = BROWN  # soil
     if stage >= 1:
         f[idx(trunk_x, 6)] = BROWN
     if stage >= 2:
@@ -83,8 +91,9 @@ def tree_stage(stage, trunk_x):
             f[idx(trunk_x, 1)] = GREEN
     return f
 
-# ---------- Droplet single drop ----------
+# ---------- Droplets ----------
 def drop_single(pot_x, seed_x_at_drop):
+    """Animate a droplet from pot_x+1 downward."""
     drop_x = pot_x + 1
     for y in range(1, 7):
         frame = soil_frame(seed_x_at_drop)
@@ -96,6 +105,7 @@ def drop_single(pot_x, seed_x_at_drop):
     return drop_x == seed_x_at_drop
 
 def drop_sequence(pot_x, seed_x_at_drop):
+    """Drop up to 3 droplets, with 2 extra visual ones if first hit occurs."""
     for attempt in range(3):
         hit = drop_single(pot_x, seed_x_at_drop)
         if hit:
@@ -112,26 +122,25 @@ def drop_sequence(pot_x, seed_x_at_drop):
         time.sleep(0.25)
     return False
 
-# ---------- Intro arrow ----------
+# ---------- Intro arrow (NEW MODIFIED VERSION) ----------
 def show_arrow_right():
-    arrow = [BLACK]*64
-    # long right arrow from column 1 to 7 (centered around middle rows)
-    coords = [
-        (1,2),(2,2),(3,2),(4,2),(5,2),(6,2),
-        (1,3),(2,3),(3,3),(4,3),(5,3),(6,3),(7,3),
-        (1,4),(2,4),(3,4),(4,4),(5,4),(6,4)
-    ]
-    for (x,y) in coords:
-        arrow[idx(x,y)] = WHITE
-    # arrow head (make it triangular at right end)
-    for (x,y) in [(6,1),(7,2),(7,4),(6,5)]:
-        arrow[idx(x,y)] = WHITE
+    """Display a long right-pointing arrow starting at column 0 and ending at 7."""
+    arrow = [BLACK] * 64
+    # Shaft (three middle rows, from column 0 to 5)
+    for x in range(0, 6):
+        for y in (2, 3, 4):
+            arrow[idx(x, y)] = WHITE
+    # Arrow head at the end (columns 6–7)
+    arrow[idx(6, 2)] = WHITE
+    arrow[idx(7, 3)] = WHITE
+    arrow[idx(6, 4)] = WHITE
     sense.set_pixels(arrow)
 
 # ---------- Main game ----------
 def run_game():
     tick = 0.10
     while True:
+        # show intro arrow and wait for right press to start
         show_arrow_right()
         started = False
         while not started:
@@ -142,24 +151,26 @@ def run_game():
                     break
             time.sleep(0.05)
 
+        # initialize round
         pot_x = 3
         seed_x = random.randint(0, 7)
         seed_dir = 1 if random.choice([True, False]) else -1
         round_active = True
 
         while round_active:
+            # move seed
             seed_x += seed_dir
             if seed_x < 0:
-                seed_x = 1
-                seed_dir = 1
+                seed_x, seed_dir = 1, 1
             elif seed_x > 7:
-                seed_x = 6
-                seed_dir = -1
+                seed_x, seed_dir = 6, -1
 
+            # draw frame
             f = soil_frame(seed_x)
             draw_pot_on(f, pot_x)
             sense.set_pixels(f)
 
+            # joystick
             evs = sense.stick.get_events()
             last = None
             for e in evs:
@@ -182,8 +193,7 @@ def run_game():
                     sense.set_pixels(tree_stage(6, seed_at_drop))
                     waiting = True
                     while waiting:
-                        evs2 = sense.stick.get_events()
-                        for e2 in evs2:
+                        for e2 in sense.stick.get_events():
                             if e2.action == 'pressed' and e2.direction == 'middle':
                                 waiting = False
                                 break
@@ -195,8 +205,7 @@ def run_game():
                     show_scroll("Retry", WHITE, speed=0.08)
                     waiting = True
                     while waiting:
-                        evs2 = sense.stick.get_events()
-                        for e2 in evs2:
+                        for e2 in sense.stick.get_events():
                             if e2.action == 'pressed' and e2.direction == 'middle':
                                 waiting = False
                                 break
