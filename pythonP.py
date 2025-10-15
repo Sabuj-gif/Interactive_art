@@ -1,187 +1,141 @@
-#!/usr/bin/env python3
 from sense_hat import SenseHat
-import time, random
+from time import sleep
 
-class PlantGame:
-    # Colors
-    B  = [0, 0, 0]        # background
-    G  = [0, 255, 0]      # leaves
-    BR = [139, 69, 19]    # brown (trunk / soil)
-    BL = [0, 120, 255]    # blue (water)
-    Y  = [255, 255, 0]    # yellow (seed)
-    W  = [255, 255, 255]  # white (pot)
-    R  = [255, 0, 0]      # red (fail)
-    GR = [0, 200, 0]      # bright green (success)
+sense = SenseHat()
+sense.clear()
 
-    def __init__(self):
-        self.sense = SenseHat()
-        self.sense.clear()
-        self.pot_x = 3
-        self.seed_x = 0
-        self.seed_dir = 1
-        self.frame_delay = 0.12
+# Colors
+W = (255, 255, 255)  # white
+B = (0, 0, 255)      # blue
+G = (0, 255, 0)      # green
+Br = (139, 69, 19)   # brown
+R = (255, 0, 0)      # red
+Bl = (0, 0, 0)       # black
 
-    # ---------- Drawing ----------
-    def soil_frame(self, seed_col=None):
-        pixels = []
-        for r in range(8):
-            for c in range(8):
-                pixels.append(self.BR if r==7 else self.B)
-        if seed_col is not None:
-            pixels[6*8 + seed_col] = self.Y
-        return pixels
+# --- Tree stages (6-step growth: trunk → leaves) ---
+def tree_stage(stage):
+    img = [Bl]*64
 
-    def draw_pot_on(self, pixels, pot_col):
-        # top 2 white pixels
-        for dx in (0,1):
-            if 0 <= pot_col+dx < 8:
-                pixels[0*8 + pot_col+dx] = self.W
-        # one guiding pixel under pot center
-        center = pot_col + 1
-        if 0 <= center < 8:
-            pixels[1*8 + center] = self.W
-        return pixels
+    # --- Trunk growth ---
+    if stage >= 1:
+        img[52] = Br  # bottom trunk
+    if stage >= 2:
+        img[44] = Br  # middle trunk
+    if stage >= 3:
+        img[36] = Br  # top trunk
 
-    def poll_joystick(self):
-        act = None
-        for e in self.sense.stick.get_events():
-            if e.action=="pressed" and e.direction in ("left","right","down","middle"):
-                act = e.direction
-        return act
+    # --- Leaves growth ---
+    if stage >= 4:
+        for i in [27, 28, 29, 30, 31]:  # bottom leaves (T bar)
+            img[i] = G
+    if stage >= 5:
+        for i in [19, 20, 21]:  # mid leaves
+            img[i] = G
+    if stage >= 6:
+        img[12] = G  # top leaf pixel
 
-    def set_full_color(self, color):
-        self.sense.set_pixels([color]*64)
+    return img
 
-    # ---------- Effects ----------
-    def blink_color(self, color, duration=2.0, period=0.25):
-        end=time.time()+duration
-        on=True
-        while time.time()<end:
-            self.set_full_color(color if on else self.B)
-            on=not on
-            time.sleep(period)
-        self.sense.clear()
+# --- Pot drawing ---
+def draw_pot(x):
+    img = [Bl]*64
+    img[x] = W
+    img[x+1] = W
+    img[8 + x + 1] = W  # drop indicator pixel
+    return img
 
-    def scroll(self,text,color,speed=0.08):
-        self.sense.show_message(text,scroll_speed=speed,text_colour=color)
+# --- Droplet animation ---
+def drop_water(x, seed_x):
+    for drop in range(3):
+        for y in range(1, 7):
+            frame = [Bl]*64
+            # Pot
+            frame[x] = W
+            frame[x+1] = W
+            frame[8 + x + 1] = W  # drop indicator
+            # Droplet
+            frame[y*8 + (x+1)] = B
+            # Seed
+            frame[56 + seed_x] = G
+            sense.set_pixels(frame)
+            sleep(0.15)
+        sleep(0.2)
 
-    # ---------- Droplets ----------
-    def drop_one(self,pot_col,seed_col):
-        drop_x = pot_col+1
-        for y in range(1,7):
-            frame=self.soil_frame(seed_col)
-            frame=self.draw_pot_on(frame,pot_col)
-            if 0<=drop_x<8: frame[y*8+drop_x]=self.BL
-            self.sense.set_pixels(frame)
-            time.sleep(0.15)
-        return drop_x==seed_col
+# --- Flash color ---
+def flash(color, duration):
+    sense.clear(color)
+    sleep(duration)
+    sense.clear()
 
-    def drop_sequence(self,pot_col,seed_col):
-        for i in range(3):
-            hit=self.drop_one(pot_col,seed_col)
-            if hit:
-                if i==0:   # drop two more right on seed
-                    for _ in range(2):
-                        self.drop_one(pot_col,seed_col)
-                return True
-            time.sleep(0.25)
-        return False
+# --- Slower text display ---
+def show_message(msg, color):
+    sense.show_message(msg, scroll_speed=0.06, text_colour=color)
 
-    # ---------- Tree Growth ----------
-    def animate_tree(self,seed_col):
-        """
-        New full tree: 2-column log, wide T, upper tiers (3, then 1 leaf).
-        Total 6s (3 stages) + hold 5s.
-        """
-        for stage in range(1,4):
-            f=self.soil_frame(None)
-            # base trunk (2-column)
-            if stage>=1:
-                for dx in (0,1):
-                    if 0<=seed_col+dx<8:
-                        f[6*8 + seed_col+dx]=self.BR
-            if stage>=2:
-                for dx in (0,1):
-                    if 0<=seed_col+dx<8:
-                        f[5*8 + seed_col+dx]=self.BR
-            if stage>=3:
-                for dy in (4,3,2):
-                    # thicker base trunk up to row 4
-                    for dx in (0,1):
-                        if 0<=seed_col+dx<8:
-                            f[dy*8 + seed_col+dx]=self.BR
-                # T-shaped main leaf line (5 pixels wide)
-                for dx in range(-2,3):
-                    c=seed_col+dx
-                    if 0<=c<8:
-                        f[2*8 + c]=self.G
-                # 3-pixel leaf row above
-                for dx in (-1,0,1):
-                    c=seed_col+dx
-                    if 0<=c<8:
-                        f[1*8 + c]=self.G
-                # single top leaf
-                if 0<=seed_col<8:
-                    f[0*8 + seed_col]=self.G
-            self.sense.set_pixels(f)
-            time.sleep(2)
-        time.sleep(5)  # hold final tree
+# --- Main Game Function ---
+def game():
+    pot_x = 3
+    seed_x = 3
 
-    # ---------- Round ----------
-    def play_round(self):
-        self.pot_x=3
-        self.seed_x=random.randint(0,7)
-        self.seed_dir=random.choice([-1,1])
-        self.sense.show_message("Get Ready",scroll_speed=0.08,text_colour=self.W)
+    # Intro arrow →
+    sense.clear()
+    arrow = [
+        Bl, Bl, W, W, W, Bl, Bl, Bl,
+        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
+        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
+        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
+        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
+        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
+        Bl, Bl, W, W, W, Bl, Bl, Bl,
+        Bl, Bl, Bl, Bl, Bl, Bl, Bl, Bl
+    ]
+    sense.set_pixels(arrow)
+    # Wait for right press
+    while True:
+        e = sense.stick.get_events()
+        if any(ev.direction == "right" and ev.action == "pressed" for ev in e):
+            break
+        sleep(0.1)
 
-        # move seed before control
-        for _ in range(20):
-            self.seed_x+=self.seed_dir
-            if self.seed_x<0:self.seed_x, self.seed_dir=1,1
-            if self.seed_x>7:self.seed_x, self.seed_dir=6,-1
-            f=self.draw_pot_on(self.soil_frame(self.seed_x),self.pot_x)
-            self.sense.set_pixels(f)
-            time.sleep(self.frame_delay)
+    # Start game loop
+    while True:
+        frame = draw_pot(pot_x)
+        frame[56 + seed_x] = G  # seed
+        sense.set_pixels(frame)
 
-        dropped=False
-        while not dropped:
-            self.seed_x+=self.seed_dir
-            if self.seed_x<0:self.seed_x, self.seed_dir=1,1
-            if self.seed_x>7:self.seed_x, self.seed_dir=6,-1
-            f=self.draw_pot_on(self.soil_frame(self.seed_x),self.pot_x)
-            self.sense.set_pixels(f)
-            act=self.poll_joystick()
-            if act=="left" and self.pot_x>0:self.pot_x-=1
-            elif act=="right" and self.pot_x<6:self.pot_x+=1
-            elif act=="down":dropped=True
-            elif act=="middle":return "restart"
-            time.sleep(self.frame_delay)
+        for event in sense.stick.get_events():
+            if event.action == "pressed":
+                if event.direction == "left" and pot_x > 0:
+                    pot_x -= 1
+                elif event.direction == "right" and pot_x < 6:
+                    pot_x += 1
+                elif event.direction == "down":
+                    drop_water(pot_x, seed_x)
+                    if pot_x == seed_x:
+                        flash((0, 255, 0), 2)
+                        # Grow tree pixel by pixel (6 stages)
+                        for stage in range(1, 7):
+                            sense.set_pixels(tree_stage(stage))
+                            sleep(1)
+                        # Hold full tree for 5 seconds
+                        sleep(5)
+                        flash((0, 255, 0), 0.5)
+                        show_message("Life saved", (0, 255, 0))
+                        # Keep full tree on display until middle press
+                        sense.set_pixels(tree_stage(6))
+                        while True:
+                            ev = sense.stick.get_events()
+                            if any(e.direction == "middle" and e.action == "pressed" for e in ev):
+                                return game()  # restart
+                            sleep(0.1)
+                    else:
+                        flash(R, 2)
+                        show_message("Water wasted", R)
+                        show_message("Retry", W)
+                        while True:
+                            ev = sense.stick.get_events()
+                            if any(e.direction == "middle" and e.action == "pressed" for e in ev):
+                                return game()  # restart
+                            sleep(0.1)
 
-        hit=self.drop_sequence(self.pot_x,self.seed_x)
-        if hit:
-            self.blink_color(self.GR,2)
-            self.animate_tree(self.seed_x)
-            self.scroll("Life saved",self.G,0.08)
-            self.scroll("Retry",self.W,0.08)
-            return "completed"
-        else:
-            self.blink_color(self.R,2)
-            self.scroll("Water wasted",self.R,0.08)
-            self.scroll("Retry",self.W,0.08)
-            return "missed"
-
-    # ---------- Game Loop ----------
-    def run(self):
-        try:
-            while True:
-                result=self.play_round()
-                waiting=True
-                while waiting:
-                    a=self.poll_joystick()
-                    if a=="middle":waiting=False
-                    time.sleep(0.12)
-        except KeyboardInterrupt:
-            self.sense.clear()
-
-if __name__=="__main__":
-    PlantGame().run()
+# --- Run the Game ---
+game()
