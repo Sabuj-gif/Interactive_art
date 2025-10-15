@@ -1,139 +1,258 @@
+#!/usr/bin/env python3
 from sense_hat import SenseHat
-from time import sleep
+import time
+import random
 
 sense = SenseHat()
 sense.clear()
 
-# Colors
-W = (255, 255, 255)  # white
-B = (0, 0, 255)      # blue
-G = (0, 255, 0)      # green
-Br = (139, 69, 19)   # brown (tree trunk)
-R = (255, 0, 0)      # red
-Bl = (0, 0, 0)       # black (background)
+# ---------- Colors ----------
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+WATER = (0, 120, 255)
+GREEN = (0, 255, 0)
+BROWN = (139, 69, 19)
+RED = (255, 0, 0)
+BRIGHT_GREEN = (0, 200, 0)
 
-# --- Tree stages ---
-def tree_stage(stage):
-    img = [Bl]*64
-    if stage == 1:  # small sprout
-        img[52] = Br
-        img[44] = G
-    elif stage == 2:  # mid tree
-        img[52] = Br
-        img[44] = Br
-        img[36] = G
-        img[35] = G
-        img[37] = G
-    elif stage == 3:  # full tree (perfectly aligned)
-        for i in [52, 44, 36]:  # single vertical trunk
-            img[i] = Br
-        # Main T-shaped leaves (5 pixels)
-        for i in [27, 28, 29, 30, 31]:
-            img[i] = G
-        # Smaller upper layer (3 pixels)
-        for i in [19, 20, 21]:
-            img[i] = G
-        # Top pixel
-        img[12] = G
-    return img
+# ---------- Helpers ----------
+def idx(x, y):
+    return y * 8 + x
 
-# --- Draw pot ---
-def draw_pot(x):
-    img = [Bl]*64
-    img[0 + x] = W
-    img[1 + x] = W
-    img[8 + x + 1] = W  # drop indicator
-    return img
+def soil_frame(seed_col=None):
+    """Return base frame (soil on bottom row). Optionally put a yellow seed at row 6."""
+    pixels = []
+    for y in range(8):
+        for x in range(8):
+            pixels.append(BROWN if y == 7 else BLACK)
+    if seed_col is not None and 0 <= seed_col < 8:
+        # yellow seed (use green for visibility)
+        pixels[idx(seed_col, 6)] = GREEN
+    return pixels
 
-# --- Droplet animation ---
-def drop_water(x, seed_x):
-    for drop in range(3):
-        for y in range(1, 7):
-            frame = [Bl]*64
-            # Pot
-            frame[x] = W
-            frame[x+1] = W
-            frame[8 + x + 1] = W  # drop indicator
-            # Droplet
-            frame[y*8 + (x+1)] = B
-            # Seed
-            frame[seed_x + 56] = G
-            sense.set_pixels(frame)
-            sleep(0.15)
-        sleep(0.2)
+def draw_pot_on(frame, pot_x):
+    """Draw pot (two white pixels on top row) and draw one indicator pixel under center."""
+    if 0 <= pot_x < 8:
+        frame[idx(pot_x, 0)] = WHITE
+    if 0 <= pot_x + 1 < 8:
+        frame[idx(pot_x + 1, 0)] = WHITE
+    # drop indicator under the right pot pixel (center)
+    drop_x = pot_x + 1
+    if 0 <= drop_x < 8:
+        frame[idx(drop_x, 1)] = WHITE
+    return frame
 
-# --- Flash color ---
-def flash(color, duration):
-    sense.clear(color)
-    sleep(duration)
+def set_all(color):
+    sense.set_pixels([color] * 64)
+
+def blink(color, duration=2.0, period=0.25):
+    end = time.time() + duration
+    on = True
+    while time.time() < end:
+        set_all(color if on else BLACK)
+        on = not on
+        time.sleep(period)
     sense.clear()
 
-# --- Display messages with slower scroll ---
-def show_message(msg, color):
-    sense.show_message(msg, scroll_speed=0.06, text_colour=color)
+def show_scroll(text, color, speed=0.08):
+    sense.show_message(text, scroll_speed=speed, text_colour=color)
 
-# --- Game main loop ---
-def game():
-    pot_x = 3
-    seed_x = 3
+# ---------- Tree stages (6 stages total) ----------
+def tree_stage(stage, trunk_x):
+    """
+    stage 1..6:
+      1: trunk bottom pixel (row6)
+      2: trunk row5
+      3: trunk row4
+      4: leaves row3 (5-pixel T bar)
+      5: leaves row2 (3-pixel)
+      6: top pixel row1 (1-pixel)
+    trunk_x is left column of the single-line trunk (we keep trunk single column aligned at trunk_x)
+    Note: trunk is single column at trunk_x here.
+    """
+    f = [BLACK] * 64
+    # soil bottom
+    for x in range(8):
+        f[idx(x, 7)] = BROWN
+    # trunk pixels (one column)
+    if stage >= 1:
+        f[idx(trunk_x, 6)] = BROWN
+    if stage >= 2:
+        f[idx(trunk_x, 5)] = BROWN
+    if stage >= 3:
+        f[idx(trunk_x, 4)] = BROWN
+    # leaves
+    if stage >= 4:
+        # 5-pixel T bar at row 3: centered on trunk_x (two left, trunk, two right)
+        for dx in (-2, -1, 0, 1, 2):
+            x = trunk_x + dx
+            if 0 <= x < 8:
+                f[idx(x, 3)] = GREEN
+    if stage >= 5:
+        for dx in (-1, 0, 1):
+            x = trunk_x + dx
+            if 0 <= x < 8:
+                f[idx(x, 2)] = GREEN
+    if stage >= 6:
+        if 0 <= trunk_x < 8:
+            f[idx(trunk_x, 1)] = GREEN
+    return f
 
-    # Intro arrow
-    sense.clear()
-    arrow = [
-        Bl, Bl, W, W, W, Bl, Bl, Bl,
-        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
-        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
-        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
-        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
-        Bl, Bl, Bl, W, W, Bl, Bl, Bl,
-        Bl, Bl, W, W, W, Bl, Bl, Bl,
-        Bl, Bl, Bl, Bl, Bl, Bl, Bl, Bl
-    ]
-    sense.set_pixels(arrow)
-    # Wait for right press
-    while True:
-        e = sense.stick.get_events()
-        if any(ev.direction == "right" and ev.action == "pressed" for ev in e):
-            break
-        sleep(0.1)
-
-    # Start game
-    while True:
-        frame = draw_pot(pot_x)
-        frame[56 + seed_x] = G  # seed
+# ---------- Droplet single drop ----------
+def drop_single(pot_x, seed_x_at_drop):
+    """Animate one droplet from pot_x+1 downward. Return True if it hits seed_x_at_drop."""
+    drop_x = pot_x + 1
+    # animate y=1..6
+    for y in range(1, 7):
+        frame = soil_frame(seed_x_at_drop)   # seed is frozen at seed_x_at_drop
+        draw_pot_on(frame, pot_x)
+        if 0 <= drop_x < 8:
+            frame[idx(drop_x, y)] = WATER
         sense.set_pixels(frame)
+        time.sleep(0.15)
+    # hit check when droplet reaches y=6 (seed row)
+    return drop_x == seed_x_at_drop
 
-        for event in sense.stick.get_events():
-            if event.action == "pressed":
-                if event.direction == "left" and pot_x > 0:
-                    pot_x -= 1
-                elif event.direction == "right" and pot_x < 6:
-                    pot_x += 1
-                elif event.direction == "down":
-                    drop_water(pot_x, seed_x)
-                    if pot_x == seed_x:
-                        flash((0, 255, 0), 2)
-                        for stage in range(1, 4):
-                            sense.set_pixels(tree_stage(stage))
-                            sleep(2)  # total 6 seconds grow time
-                        flash((0, 255, 0), 0.5)
-                        show_message("Life saved", (0, 255, 0))
-                        # keep tree until middle press
-                        sense.set_pixels(tree_stage(3))
-                        while True:
-                            ev = sense.stick.get_events()
-                            if any(e.direction == "middle" and e.action == "pressed" for e in ev):
-                                return game()  # restart game
-                            sleep(0.1)
-                    else:
-                        flash(R, 2)
-                        show_message("Water wasted", R)
-                        show_message("Retry", W)
-                        while True:
-                            ev = sense.stick.get_events()
-                            if any(e.direction == "middle" and e.action == "pressed" for e in ev):
-                                return game()  # restart
-                            sleep(0.1)
+def drop_sequence(pot_x, seed_x_at_drop):
+    """
+    Drop up to 3 droplets. If first droplet hits, drop 2 additional droplets targeted at seed.
+    Return True if hit occurred (at any time).
+    """
+    for attempt in range(3):
+        hit = drop_single(pot_x, seed_x_at_drop)
+        if hit:
+            # if first droplet hit (attempt == 0), animate two extra droplets falling on the seed
+            if attempt == 0:
+                # guaranteed two extra droplets falling on same column (visual)
+                for _ in range(2):
+                    # small loop to animate another droplet
+                    for y in range(1, 7):
+                        frame = soil_frame(seed_x_at_drop)
+                        draw_pot_on(frame, pot_x)
+                        if 0 <= pot_x + 1 < 8:
+                            frame[idx(pot_x + 1, y)] = WATER
+                        sense.set_pixels(frame)
+                        time.sleep(0.12)
+            return True
+        time.sleep(0.25)  # pause between independent droplets
+    return False
 
-# --- Run the game ---
-game()
+# ---------- Intro arrow ----------
+def show_arrow_right():
+    # a simple right arrow, white on black
+    arrow = [BLACK]*64
+    # draw arrow shape (centered)
+    # fill pixels to resemble a right arrow
+    coords = [
+        (2,0),(3,0),(4,0),
+        (3,1),(4,1),
+        (3,2),(4,2),
+        (3,3),(4,3),
+        (3,4),(4,4),
+        (2,5),(3,5),(4,5)
+    ]
+    for x,y in coords:
+        arrow[idx(x,y)] = WHITE
+    sense.set_pixels(arrow)
+
+# ---------- Main game ----------
+def run_game():
+    tick = 0.10   # main loop tick (seconds) — controls seed speed; smaller = faster motion
+    while True:
+        # show intro arrow and wait for right press to start
+        show_arrow_right()
+        started = False
+        while not started:
+            evs = sense.stick.get_events()
+            for e in evs:
+                if e.action == 'pressed' and e.direction == 'right':
+                    started = True
+                    break
+            time.sleep(0.05)
+
+        # initialize round
+        pot_x = 3         # range 0..6
+        seed_x = random.randint(0, 7)
+        seed_dir = 1 if random.choice([True, False]) else -1
+        round_active = True
+
+        # game loop for this round: seed moves continuously until player presses down
+        while round_active:
+            # move seed
+            seed_x += seed_dir
+            if seed_x < 0:
+                seed_x = 1
+                seed_dir = 1
+            elif seed_x > 7:
+                seed_x = 6
+                seed_dir = -1
+
+            # render frame with soil, seed, pot + indicator
+            f = soil_frame(seed_x)
+            draw_pot_on(f, pot_x)
+            sense.set_pixels(f)
+
+            # process joystick events (take last relevant press in this tick)
+            evs = sense.stick.get_events()
+            last = None
+            for e in evs:
+                if e.action == 'pressed' and e.direction in ('left','right','down','middle'):
+                    last = e.direction
+            if last == 'left' and pot_x > 0:
+                pot_x -= 1
+            elif last == 'right' and pot_x < 6:
+                pot_x += 1
+            elif last == 'down':
+                # freeze seed position now
+                seed_at_drop = seed_x
+                # run drop sequence
+                hit = drop_sequence(pot_x, seed_at_drop)
+                if hit:
+                    # flash green 2s
+                    blink(BRIGHT_GREEN, duration=2.0, period=0.25)
+                    # grow tree pixel-by-pixel: 6 stages, 1s each => 6s total
+                    for stage in range(1, 7):
+                        sense.set_pixels(tree_stage(stage, seed_at_drop))
+                        time.sleep(1.0)
+                    # hold 5s showing final tree
+                    time.sleep(5.0)
+                    # show "Life saved" slowly
+                    show_scroll("Life saved", GREEN, speed=0.08)
+                    # now wait for middle press (keep final tree displayed until then)
+                    sense.set_pixels(tree_stage(6, seed_at_drop))
+                    waiting = True
+                    while waiting:
+                        evs2 = sense.stick.get_events()
+                        for e2 in evs2:
+                            if e2.action == 'pressed' and e2.direction == 'middle':
+                                waiting = False
+                                break
+                        time.sleep(0.05)
+                    # after middle press, restart round (break to outer while True)
+                    round_active = False
+                else:
+                    # miss: flash red 2s, show "Water wasted", then "Retry", wait middle press
+                    blink(RED, duration=2.0, period=0.25)
+                    show_scroll("Water wasted", RED, speed=0.08)
+                    show_scroll("Retry", WHITE, speed=0.08)
+                    waiting = True
+                    while waiting:
+                        evs2 = sense.stick.get_events()
+                        for e2 in evs2:
+                            if e2.action == 'pressed' and e2.direction == 'middle':
+                                waiting = False
+                                break
+                        time.sleep(0.05)
+                    round_active = False
+            elif last == 'middle':
+                # allow player to cancel round and go back to start arrow
+                round_active = False
+
+            time.sleep(tick)
+
+# ---------- Start ----------
+if __name__ == "__main__":
+    try:
+        run_game()
+    except KeyboardInterrupt:
+        sense.clear()
