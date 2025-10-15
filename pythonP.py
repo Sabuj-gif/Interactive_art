@@ -122,18 +122,31 @@ def drop_sequence(pot_x, seed_x_at_drop):
         time.sleep(0.25)
     return False
 
-# ---------- Intro arrow (NEW MODIFIED VERSION) ----------
+# ---------- Intro arrow (PERFECTLY POINTY VERSION) ----------
 def show_arrow_right():
-    """Display a long right-pointing arrow starting at column 0 and ending at 7."""
+    """
+    Display a right-pointing arrow starting from column 0,
+    with a 5-column shaft and a 3-level triangular point.
+    """
     arrow = [BLACK] * 64
-    # Shaft (three middle rows, from column 0 to 5)
-    for x in range(0, 6):
+    # Shaft: 5 columns (0–4), rows 2–4
+    for x in range(0, 5):
         for y in (2, 3, 4):
             arrow[idx(x, y)] = WHITE
-    # Arrow head at the end (columns 6–7)
+    # Arrowhead: like the tree top (5→3→1 pixels)
+    # Row 1 (top of head)
+    arrow[idx(5, 1)] = WHITE
+    arrow[idx(6, 1)] = WHITE
+    arrow[idx(7, 1)] = WHITE
+    # Row 2 (middle)
     arrow[idx(6, 2)] = WHITE
     arrow[idx(7, 3)] = WHITE
     arrow[idx(6, 4)] = WHITE
+    # Row 3 (bottom of head)
+    arrow[idx(5, 5)] = WHITE
+    arrow[idx(6, 5)] = WHITE
+    arrow[idx(7, 5)] = WHITE
+
     sense.set_pixels(arrow)
 
 # ---------- Main game ----------
@@ -170,11 +183,11 @@ def run_game():
             draw_pot_on(f, pot_x)
             sense.set_pixels(f)
 
-            # joystick
+            # joystick input
             evs = sense.stick.get_events()
             last = None
             for e in evs:
-                if e.action == 'pressed' and e.direction in ('left','right','down','middle'):
+                if e.action == 'pressed' and e.direction in ('left', 'right', 'down', 'middle'):
                     last = e.direction
             if last == 'left' and pot_x > 0:
                 pot_x -= 1
